@@ -1,319 +1,345 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SeeChange TruYou Viewer (Debug)</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SeeChange TruYou Viewer (Debug)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
 </head>
 <body class="bg-gray-100 h-screen flex items-center justify-center">
-    <div class="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
-        <h1 class="text-2xl font-bold mb-4 text-center text-blue-600">
-            SeeChange TruYou Viewer (Debug)
-        </h1>
-        <div class="mb-4">
-            <video id="video" controls class="w-full h-64 bg-black rounded"></video>
-        </div>
-        <div class="flex items-center mb-4">
-            <input
-                type="text"
-                id="streamKeyInput"
-                placeholder="Enter stream key"
-                class="flex-grow mr-2 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-            />
-            <button
-                id="loadStreamButton"
-                class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
-            >
-                Load Stream
-            </button>
-        </div>
-        <div id="verificationStatus" class="text-center text-sm mb-2"></div>
-        <div id="integrityStatus" class="text-center text-sm font-bold mb-2"></div>
-        <div id="errorMessage" class="mt-2 text-center text-sm text-red-600 hidden"></div>
-        <div id="logContainer" class="mt-4 p-2 bg-gray-100 rounded h-40 overflow-y-auto text-xs"></div>
+  <div class="bg-white p-8 rounded-lg shadow-md max-w-md w-full">
+    <h1 class="text-2xl font-bold mb-4 text-center text-blue-600">
+      SeeChange TruYou Viewer (Debug)
+    </h1>
+    <div class="mb-4">
+      <video id="video" controls class="w-full h-64 bg-black rounded"></video>
     </div>
-    <script>
-        console.log('Script started');
-        const video = document.getElementById('video');
-        const streamKeyInput = document.getElementById('streamKeyInput');
-        const loadStreamButton = document.getElementById('loadStreamButton');
-        const verificationStatus = document.getElementById('verificationStatus');
-        const integrityStatus = document.getElementById('integrityStatus');
-        const errorMessage = document.getElementById('errorMessage');
-        const logContainer = document.getElementById('logContainer');
-        let publicKey;
-        let hls;
-        let integrityChecksPassed = 0;
-        let integrityChecksFailed = 0;
+    <div class="flex items-center mb-4">
+      <input
+        type="text"
+        id="streamKeyInput"
+        placeholder="Enter stream key"
+        class="flex-grow mr-2 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+      />
+      <button
+        id="loadStreamButton"
+        class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded"
+      >
+        Load Stream
+      </button>
+    </div>
+    <div id="verificationStatus" class="text-center text-sm mb-2"></div>
+    <div id="integrityStatus" class="text-center text-sm font-bold mb-2"></div>
+    <div id="errorMessage" class="mt-2 text-center text-sm text-red-600 hidden"></div>
+    <div id="logContainer" class="mt-4 p-2 bg-gray-100 rounded h-40 overflow-y-auto text-xs"></div>
+  </div>
 
-        console.log('DOM elements initialized');
+  <script>
+    console.log('Script started');
+    const video = document.getElementById('video');
+    const streamKeyInput = document.getElementById('streamKeyInput');
+    const loadStreamButton = document.getElementById('loadStreamButton');
+    const verificationStatus = document.getElementById('verificationStatus');
+    const integrityStatus = document.getElementById('integrityStatus');
+    const errorMessage = document.getElementById('errorMessage');
+    const logContainer = document.getElementById('logContainer');
 
-        if (window.crypto && window.crypto.subtle) {
-            console.log('Web Crypto API is available');
-            log('Web Crypto API is available');
-        } else {
-            console.log('Web Crypto API is not available, integrity checks will be limited');
-            log('Web Crypto API is not available, integrity checks will be limited');
+    let publicKey;
+    let hls;
+    let integrityChecksPassed = 0;
+    let integrityChecksFailed = 0;
+
+    console.log('DOM elements initialized');
+
+    if (window.crypto && window.crypto.subtle) {
+      console.log('Web Crypto API is available');
+      log('Web Crypto API is available');
+    } else {
+      console.log('Web Crypto API is not available, integrity checks will be limited');
+      log('Web Crypto API is not available, integrity checks will be limited');
+    }
+
+    loadStreamButton.onclick = loadStream;
+
+    function log(message) {
+      console.log(`Log: ${message}`);
+      const logEntry = document.createElement('div');
+      logEntry.textContent = `${new Date().toISOString().substr(11, 8)} - ${message}`;
+      logContainer.appendChild(logEntry);
+      logContainer.scrollTop = logContainer.scrollHeight;
+    }
+
+    function showError(message) {
+      console.log(`Error: ${message}`);
+      errorMessage.textContent = message;
+      errorMessage.classList.remove('hidden');
+    }
+
+    function hideError() {
+      console.log('Hiding error message');
+      errorMessage.textContent = '';
+      errorMessage.classList.add('hidden');
+    }
+
+    async function loadStream() {
+      console.log('loadStream called');
+      hideError();
+
+      const streamKey = streamKeyInput.value;
+      if (!streamKey) {
+        showError('Please enter a stream key');
+        return;
+      }
+
+      log(`Loading stream with key: ${streamKey}`);
+
+      try {
+        publicKey = await fetchPublicKey(streamKey);
+        log('Public key fetched successfully');
+      } catch (error) {
+        console.error('Error fetching public key:', error);
+        log(`Error fetching public key: ${error.message}`);
+        showError('Error fetching public key. Please check the stream key and try again.');
+        return;
+      }
+
+      if (Hls.isSupported()) {
+        console.log('HLS.js is supported');
+        log('HLS.js is supported');
+
+        if (hls) {
+          console.log('Destroying existing HLS instance');
+          hls.destroy();
         }
 
-        loadStreamButton.onclick = loadStream;
-
-        function log(message) {
-            console.log(`Log: ${message}`);
-            const logEntry = document.createElement('div');
-            logEntry.textContent = `${new Date().toISOString().substr(11, 8)} - ${message}`;
-            logContainer.appendChild(logEntry);
-            logContainer.scrollTop = logContainer.scrollHeight;
-        }
-
-        function showError(message) {
-            console.log(`Error: ${message}`);
-            errorMessage.textContent = message;
-            errorMessage.classList.remove('hidden');
-        }
-
-        function hideError() {
-            console.log('Hiding error message');
-            errorMessage.textContent = '';
-            errorMessage.classList.add('hidden');
-        }
-
-        async function loadStream() {
-            console.log('loadStream called');
-            hideError();
-            const streamKey = streamKeyInput.value;
-            if (!streamKey) {
-                showError('Please enter a stream key');
-                return;
-            }
-            log(`Loading stream with key: ${streamKey}`);
-
-            try {
-                publicKey = await fetchPublicKey(streamKey);
-                log('Public key fetched successfully');
-            } catch (error) {
-                console.error('Error fetching public key:', error);
-                log(`Error fetching public key: ${error.message}`);
-                showError('Error fetching public key. Please check the stream key and try again.');
-                return;
-            }
-
-            if (Hls.isSupported()) {
-                console.log('HLS.js is supported');
-                log('HLS.js is supported');
-                if (hls) {
-                    console.log('Destroying existing HLS instance');
-                    hls.destroy();
-                }
-                hls = new Hls({
-                    debug: true,
-                    lowLatencyMode: true,
-                    liveSyncDurationCount: 1,
-                    liveMaxLatencyDurationCount: 3,
-                    liveDurationInfinity: true,
-                    highBufferWatchdogPeriod: 0.5,
-                    xhrSetup: function(xhr, url) {
-                        console.log(`XHR setup for URL: ${url}`);
-                        xhr.addEventListener('load', function() {
-                            console.log(`Segment loaded: ${url}`);
-                            log(`Segment loaded: ${url}`);
-                            if (xhr.status === 200 && url.endsWith('.m4s')) {
-                                const hash = xhr.getResponseHeader('X-Segment-Hash');
-                                const signature = xhr.getResponseHeader('X-Segment-Signature');
-                                console.log(`Hash header: ${hash ? 'present' : 'missing'}`);
-                                console.log(`Signature header: ${signature ? 'present' : 'missing'}`);
-                                log(`Hash header: ${hash ? 'present' : 'missing'}`);
-                                log(`Signature header: ${signature ? 'present' : 'missing'}`);
-                                if (hash && signature) {
-                                    verifySegment(hash, signature);
-                                } else {
-                                    console.log('Missing hash or signature, skipping verification');
-                                    log('Missing hash or signature, skipping verification');
-                                    verificationStatus.textContent = "Stream integrity check not available";
-                                    verificationStatus.className = "text-center text-sm text-yellow-600";
-                                }
-                            }
-                        });
-                    }
-                });
-
-                console.log(`Loading source: /media/${streamKey}/playlist.m3u8`);
-                hls.loadSource(`/media/${streamKey}/playlist.m3u8`);
-                hls.attachMedia(video);
-                hls.on(Hls.Events.MANIFEST_PARSED, () => {
-                    console.log('Manifest parsed, attempting to play');
-                    log('Manifest parsed, attempting to play');
-                    verificationStatus.textContent = "Waiting for first segment...";
-                    verificationStatus.className = "text-center text-sm text-yellow-600";
-                    video.play();
-                });
-
-                hls.on(Hls.Events.ERROR, function (event, data) {
-                    console.log(`HLS error: ${data.type}`, data);
-                    log(`HLS error: ${data.type}`);
-                    if (data.fatal) {
-                        switch(data.type) {
-                            case Hls.ErrorTypes.NETWORK_ERROR:
-                                console.log('Fatal network error encountered, trying to recover');
-                                log('Fatal network error encountered, trying to recover');
-                                hls.startLoad();
-                                break;
-                            case Hls.ErrorTypes.MEDIA_ERROR:
-                                console.log('Fatal media error encountered, trying to recover');
-                                log('Fatal media error encountered, trying to recover');
-                                hls.recoverMediaError();
-                                break;
-                            default:
-                                console.log('Fatal error, cannot recover');
-                                log('Fatal error, cannot recover');
-                                hls.destroy();
-                                break;
-                        }
-                    }
-                });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-                console.log('Native HLS playback supported');
-                log('Native HLS playback supported');
-                video.src = `/media/${streamKey}/playlist.m3u8`;
-                video.addEventListener('loadedmetadata', () => {
-                    console.log('Metadata loaded, attempting to play');
-                    log('Metadata loaded, attempting to play');
-                    video.play();
-                });
-            } else {
-                console.log('HLS is not supported on this browser');
-                log('HLS is not supported on this browser');
-                showError('Your browser does not support HLS playback.');
-            }
-        }
-
-        async function fetchPublicKey(streamKey) {
-            console.log(`Fetching public key for stream: ${streamKey}`);
-            log(`Fetching public key for stream: ${streamKey}`);
-            const response = await fetch(`/publickey/${streamKey}`);
-            if (!response.ok) {
-                throw new Error(`Failed to fetch public key: ${response.status} ${response.statusText}`);
-            }
-            const publicKeyBase64 = await response.text();
-            console.log(`Public key (base64): ${publicKeyBase64.slice(0, 50)}...`);
-            log(`Public key (base64): ${publicKeyBase64.slice(0, 50)}...`);
-
-            if (window.crypto && window.crypto.subtle) {
-                try {
-                    const binaryDer = atob(publicKeyBase64);
-                    const binaryDerBuffer = new ArrayBuffer(binaryDer.length);
-                    const binaryDerArray = new Uint8Array(binaryDerBuffer);
-                    for (let i = 0; i < binaryDer.length; i++) {
-                        binaryDerArray[i] = binaryDer.charCodeAt(i);
-                    }
-                    const importedKey = await window.crypto.subtle.importKey(
-                        "spki",
-                        binaryDerBuffer,
-                        {
-                            name: "RSASSA-PKCS1-v1_5",
-                            hash: "SHA-256",
-                        },
-                        true,
-                        ["verify"]
-                    );
-                    console.log('Public key imported successfully');
-                    log('Public key imported successfully');
-                    return importedKey;
-                } catch (error) {
-                    console.error('Error importing public key:', error);
-                    log(`Error importing public key: ${error.message}`);
-                    return publicKeyBase64;
-                }
-            } else {
-                console.log('Web Crypto API not available, using base64 public key');
-                log('Web Crypto API not available, using base64 public key');
-                return publicKeyBase64;
-            }
-        }
-        async function verifySegment(hash, signature) {
-            console.log('verifySegment called', { hash, signature });
-            log('Verifying segment');
-            log(`Hash: ${hash}`);
-            log(`Signature: ${signature.slice(0, 50)}...`);
-        
-            try {
-                console.log('Attempting to verify segment');
-                const signatureBuffer = base64ToArrayBuffer(signature);
-                const hashBuffer = hexToArrayBuffer(hash);
-                
-                console.log('Public key type:', typeof publicKey);
-                console.log('Public key:', publicKey);
-                console.log('Signature buffer length:', signatureBuffer.byteLength);
-                console.log('Hash buffer length:', hashBuffer.byteLength);
-        
-                const verified = await window.crypto.subtle.verify(
-                    {
-                        name: "RSASSA-PKCS1-v1_5",
-                        hash: {name: "SHA-256"},
-                    },
-                    publicKey,
-                    signatureBuffer,
-                    hashBuffer
-                );
-        
-                console.log('Verification result:', verified);
-        
-                if (verified) {
-                    console.log('Segment verified successfully');
-                    log('Segment verified successfully');
-                    integrityChecksPassed++;
-                    verificationStatus.textContent = "Stream verified";
-                    verificationStatus.className = "text-center text-sm text-green-600";
+        hls = new Hls({
+          debug: true,
+          lowLatencyMode: true,
+          liveSyncDurationCount: 1,
+          liveMaxLatencyDurationCount: 3,
+          liveDurationInfinity: true,
+          highBufferWatchdogPeriod: 0.5,
+          xhrSetup: function (xhr, url) {
+            console.log(`XHR setup for URL: ${url}`);
+            xhr.responseType = 'arraybuffer';
+            xhr.addEventListener('load', function () {
+              console.log(`Segment loaded: ${url}`);
+              log(`Segment loaded: ${url}`);
+              if (xhr.status === 200 && url.endsWith('.m4s')) {
+                const hash = xhr.getResponseHeader('X-Segment-Hash');
+                const signature = xhr.getResponseHeader('X-Segment-Signature');
+                console.log(`Hash header: ${hash ? 'present' : 'missing'}`);
+                console.log(`Signature header: ${signature ? 'present' : 'missing'}`);
+                log(`Hash header: ${hash ? 'present' : 'missing'}`);
+                log(`Signature header: ${signature ? 'present' : 'missing'}`);
+                if (hash && signature) {
+                  verifySegment(hash, signature, xhr.response);
                 } else {
-                    console.log('Segment verification failed');
-                    log('Segment verification failed');
-                    integrityChecksFailed++;
-                    verificationStatus.textContent = "Stream verification failed";
-                    verificationStatus.className = "text-center text-sm text-red-600";
+                  console.log('Missing hash or signature, skipping verification');
+                  log('Missing hash or signature, skipping verification');
+                  verificationStatus.textContent = "Stream integrity check not available";
+                  verificationStatus.className = "text-center text-sm text-yellow-600";
                 }
-                updateIntegrityStatus();
-            } catch (error) {
-                console.error('Verification error:', error);
-                log(`Verification error: ${error.message}`);
-                integrityChecksFailed++;
-                updateIntegrityStatus();
-                verificationStatus.textContent = "Stream verification error";
-                verificationStatus.className = "text-center text-sm text-red-600";
+              }
+            });
+          }
+        });
+
+        console.log(`Loading source: /media/${streamKey}/playlist.m3u8`);
+        hls.loadSource(`/media/${streamKey}/playlist.m3u8`);
+        hls.attachMedia(video);
+
+        hls.on(Hls.Events.MANIFEST_PARSED, () => {
+          console.log('Manifest parsed, attempting to play');
+          log('Manifest parsed, attempting to play');
+          verificationStatus.textContent = "Waiting for first segment...";
+          verificationStatus.className = "text-center text-sm text-yellow-600";
+          video.play();
+        });
+
+        hls.on(Hls.Events.ERROR, function (event, data) {
+          console.log(`HLS error: ${data.type}`, data);
+          log(`HLS error: ${data.type}`);
+          if (data.fatal) {
+            switch (data.type) {
+              case Hls.ErrorTypes.NETWORK_ERROR:
+                console.log('Fatal network error encountered, trying to recover');
+                log('Fatal network error encountered, trying to recover');
+                hls.startLoad();
+                break;
+              case Hls.ErrorTypes.MEDIA_ERROR:
+                console.log('Fatal media error encountered, trying to recover');
+                log('Fatal media error encountered, trying to recover');
+                hls.recoverMediaError();
+                break;
+              default:
+                console.log('Fatal error, cannot recover');
+                log('Fatal error, cannot recover');
+                hls.destroy();
+                break;
             }
-        }
+          }
+        });
+      } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+        console.log('Native HLS playback supported');
+        log('Native HLS playback supported');
+        video.src = `/media/${streamKey}/playlist.m3u8`;
+        video.addEventListener('loadedmetadata', () => {
+          console.log('Metadata loaded, attempting to play');
+          log('Metadata loaded, attempting to play');
+          video.play();
+        });
+      } else {
+        console.log('HLS is not supported on this browser');
+        log('HLS is not supported on this browser');
+        showError('Your browser does not support HLS playback.');
+      }
+    }
 
-        function updateIntegrityStatus() {
-            const total = integrityChecksPassed + integrityChecksFailed;
-            const passRate = (integrityChecksPassed / total * 100).toFixed(2);
-            console.log(`Updating integrity status: ${passRate}% (${integrityChecksPassed}/${total})`);
-            integrityStatus.textContent = `Integrity: ${passRate}% (${integrityChecksPassed}/${total})`;
-            
-            if (integrityChecksFailed > 0) {
-                integrityStatus.className = "text-center text-sm font-bold text-red-600";
-            } else {
-                integrityStatus.className = "text-center text-sm font-bold text-green-600";
-            }
+    async function fetchPublicKey(streamKey) {
+      console.log(`Fetching public key for stream: ${streamKey}`);
+      log(`Fetching public key for stream: ${streamKey}`);
+      const response = await fetch(`/publickey/${streamKey}`);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch public key: ${response.status} ${response.statusText}`);
+      }
+      const publicKeyBase64 = await response.text();
+      console.log(`Public key (base64): ${publicKeyBase64.slice(0, 50)}...`);
+      log(`Public key (base64): ${publicKeyBase64.slice(0, 50)}...`);
+      if (window.crypto && window.crypto.subtle) {
+        try {
+          const binaryDer = atob(publicKeyBase64);
+          const binaryDerBuffer = new ArrayBuffer(binaryDer.length);
+          const binaryDerArray = new Uint8Array(binaryDerBuffer);
+          for (let i = 0; i < binaryDer.length; i++) {
+            binaryDerArray[i] = binaryDer.charCodeAt(i);
+          }
+          const importedKey = await window.crypto.subtle.importKey(
+            "spki",
+            binaryDerBuffer,
+            {
+              name: "RSASSA-PKCS1-v1_5",
+              hash: "SHA-256",
+            },
+            true,
+            ["verify"]
+          );
+          console.log('Public key imported successfully');
+          log('Public key imported successfully');
+          return importedKey;
+        } catch (error) {
+          console.error('Error importing public key:', error);
+          log(`Error importing public key: ${error.message}`);
+          return publicKeyBase64;
         }
-
-        function hexToArrayBuffer(hexString) {
-            console.log('Converting hex to ArrayBuffer');
-            return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16))).buffer;
+      } else {
+        console.log('Web Crypto API not available, using base64 public key');
+        log('Web Crypto API not available, using base64 public key');
+        return publicKeyBase64;
+      }
+    }
+    async function verifySegment(hash, signature, segmentData) {
+        console.log('verifySegment called', { hash, signature, segmentData });
+        log('Verifying segment');
+        log(`Hash: ${hash}`);
+        log(`Signature: ${signature.slice(0, 50)}...`);
+        try {
+          console.log('Attempting to verify segment');
+          const signatureBuffer = base64ToArrayBuffer(signature);
+          const hashBuffer = hexToArrayBuffer(hash);
+          console.log('Public key type:', typeof publicKey);
+          console.log('Public key:', publicKey);
+          console.log('Signature buffer length:', signatureBuffer.byteLength);
+          console.log('Hash buffer length:', hashBuffer.byteLength);
+      
+          // Calculate the hash of the received segment data
+          const actualHash = await crypto.subtle.digest('SHA-256', segmentData);
+          const actualHashHex = arrayBufferToHex(actualHash);
+      
+          // Compare the received hash with the actual hash
+          if (hash !== actualHashHex) {
+            console.log('Hash mismatch detected');
+            log('Hash mismatch detected');
+            integrityChecksFailed++;
+            verificationStatus.textContent = "Stream verification failed (hash mismatch)";
+            verificationStatus.className = "text-center text-sm text-red-600";
+            updateIntegrityStatus();
+            return;
+          }
+      
+          const verified = await window.crypto.subtle.verify(
+            {
+              name: "RSASSA-PKCS1-v1_5",
+              hash: { name: "SHA-256" },
+            },
+            publicKey,
+            signatureBuffer,
+            hashBuffer
+          );
+          console.log('Verification result:', verified);
+        if (verified) {
+          console.log('Segment verified successfully');
+          log('Segment verified successfully');
+          integrityChecksPassed++;
+          verificationStatus.textContent = "Stream verified";
+          verificationStatus.className = "text-center text-sm text-green-600";
+        } else {
+          console.log('Segment verification failed');
+          log('Segment verification failed');
+          integrityChecksFailed++;
+          verificationStatus.textContent = "Stream verification failed";
+          verificationStatus.className = "text-center text-sm text-red-600";
         }
+        updateIntegrityStatus();
+      } catch (error) {
+        console.error('Verification error:', error);
+        log(`Verification error: ${error.message}`);
+        integrityChecksFailed++;
+        updateIntegrityStatus();
+        verificationStatus.textContent = "Stream verification error";
+        verificationStatus.className = "text-center text-sm text-red-600";
+      }
+    }
 
-        function base64ToArrayBuffer(base64) {
-            console.log('Converting base64 to ArrayBuffer');
-            var binary_string = window.atob(base64);
-            var len = binary_string.length;
-            var bytes = new Uint8Array(len);
-            for (var i = 0; i < len; i++) {
-                bytes[i] = binary_string.charCodeAt(i);
-            }
-            return bytes.buffer;
-        }
+    function updateIntegrityStatus() {
+      const total = integrityChecksPassed + integrityChecksFailed;
+      const passRate = (integrityChecksPassed / total * 100).toFixed(2);
+      console.log(`Updating integrity status: ${passRate}% (${integrityChecksPassed}/${total})`);
+      integrityStatus.textContent = `Integrity: ${passRate}% (${integrityChecksPassed}/${total})`;
+      if (integrityChecksFailed > 0) {
+        integrityStatus.className = "text-center text-sm font-bold text-red-600";
+      } else {
+        integrityStatus.className = "text-center text-sm font-bold text-green-600";
+      }
+    }
 
-        console.log('Script setup complete');
-    </script>
+    function hexToArrayBuffer(hexString) {
+      console.log('Converting hex to ArrayBuffer');
+      return new Uint8Array(hexString.match(/.{1,2}/g).map(byte => parseInt(byte, 16))).buffer;
+    }
+
+    function base64ToArrayBuffer(base64) {
+      console.log('Converting base64 to ArrayBuffer');
+      var binary_string = window.atob(base64);
+      var len = binary_string.length;
+      var bytes = new Uint8Array(len);
+      for (var i = 0; i < len; i++) {
+        bytes[i] = binary_string.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function arrayBufferToHex(arrayBuffer) {
+      const byteArray = new Uint8Array(arrayBuffer);
+      const hexCodes = [...byteArray].map(value => {
+        const hexCode = value.toString(16);
+        return hexCode.padStart(2, '0');
+      });
+      return hexCodes.join('');
+    }
+
+    console.log('Script setup complete');
+  </script>
 </body>
 </html>

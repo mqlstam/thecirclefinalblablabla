@@ -36,46 +36,66 @@ app.get('/viewer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
 
-// Updated media serving with correct path and error handling
 app.use('/media', (req, res, next) => {
   const filePath = path.join(__dirname, 'media', req.url);
-  
+
   fs.access(filePath, fs.constants.F_OK, (err) => {
-    if (err) {
+    if (err) { 
       console.log(`File not found: ${filePath}`);
       return res.status(404).send('File not found');
     }
-    
+
     if (path.extname(filePath) === '.m4s') {
-      fs.readFile(filePath, (err, data) => {
-        if (err) {
+      fs.promises.readFile(filePath)
+        .then(data => { 
+          const streamId = req.url.split('/')[1]; 
+          const streamData = streamKeys.get(streamId);
+
+          if (streamData && streamData.expiresAt > Date.now()) {
+            // 1. Convert the Buffer to a Base64 string
+            const dataBase64 = data.toString('base64');
+
+            // 2. Calculate hash (using the original 'data' Buffer)
+            const hash = crypto.createHash('sha256').update(data).digest('hex');
+
+            // 3. Sign the hash 
+            const signature = crypto.sign('RSA-SHA256', Buffer.from(hash, 'hex'), streamData.privateKey).toString('base64');
+
+            // Set headers
+            res.setHeader('X-Segment-Hash', hash);
+            res.setHeader('X-Segment-Signature', signature);
+            res.setHeader('Access-Control-Allow-Origin', '*');
+            res.setHeader('Access-Control-Expose-Headers', 'X-Segment-Hash, X-Segment-Signature');
+            res.setHeader('Content-Type', 'text/plain'); // Set content type for Base64 
+            res.setHeader('Content-Length', dataBase64.length); 
+
+            // Send the Base64-encoded data
+            res.send(dataBase64); 
+          } else {
+            return res.status(403).send('Stream key is invalid or expired');
+          }
+
+
+        })
+        .catch(err => {
           console.error(`Error reading file: ${filePath}`, err);
           return res.status(500).send('Internal Server Error');
-        }
+        });
 
-        const streamId = req.url.split('/')[1]; // Extract streamId from URL
-        const streamData = streamKeys.get(streamId);
-
-        if (streamData && streamData.expiresAt > Date.now()) {
-          const hash = crypto.createHash('sha256').update(data).digest('hex');
-          const signature = crypto.sign('RSA-SHA256', Buffer.from(hash, 'hex'), streamData.privateKey).toString('base64');
-          res.setHeader('X-Segment-Hash', hash);
-          res.setHeader('X-Segment-Signature', signature);
-        }
-
-        res.setHeader('Access-Control-Allow-Origin', '*');
-        res.setHeader('Access-Control-Expose-Headers', 'X-Segment-Hash, X-Segment-Signature');
-        res.send(data);
-      });
-    } else {
-      // For non-.m4s files, use standard static file serving
+    } else { 
       express.static(path.join(__dirname, 'media'))(req, res, next);
     }
   });
 });
-
 function generateStreamKey() {
   return crypto.randomBytes(8).toString('hex');
+}
+
+// Helper function to convert ArrayBuffer/Buffer to hex string
+function arrayBufferToHex(buffer) {
+  return Array.from(new Uint8Array(buffer))
+    .map(b => b.toString(16).padStart(2, '0'))
+    .join('');
 }
 
 io.on('connection', (socket) => {

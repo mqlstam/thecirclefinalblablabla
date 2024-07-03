@@ -36,7 +36,43 @@ app.get('/viewer', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'viewer.html'));
 });
 
-app.use('/media', express.static(path.join(__dirname, 'media')));
+// Updated media serving with correct path and error handling
+app.use('/media', (req, res, next) => {
+  const filePath = path.join(__dirname, 'media', req.url);
+  
+  fs.access(filePath, fs.constants.F_OK, (err) => {
+    if (err) {
+      console.log(`File not found: ${filePath}`);
+      return res.status(404).send('File not found');
+    }
+    
+    if (path.extname(filePath) === '.m4s') {
+      fs.readFile(filePath, (err, data) => {
+        if (err) {
+          console.error(`Error reading file: ${filePath}`, err);
+          return res.status(500).send('Internal Server Error');
+        }
+
+        const streamId = req.url.split('/')[1]; // Extract streamId from URL
+        const streamData = streamKeys.get(streamId);
+
+        if (streamData && streamData.expiresAt > Date.now()) {
+          const hash = crypto.createHash('sha256').update(data).digest('hex');
+          const signature = crypto.sign('RSA-SHA256', Buffer.from(hash, 'hex'), streamData.privateKey).toString('base64');
+          res.setHeader('X-Segment-Hash', hash);
+          res.setHeader('X-Segment-Signature', signature);
+        }
+
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        res.setHeader('Access-Control-Expose-Headers', 'X-Segment-Hash, X-Segment-Signature');
+        res.send(data);
+      });
+    } else {
+      // For non-.m4s files, use standard static file serving
+      express.static(path.join(__dirname, 'media'))(req, res, next);
+    }
+  });
+});
 
 function generateStreamKey() {
   return crypto.randomBytes(8).toString('hex');
@@ -85,7 +121,7 @@ io.on('connection', (socket) => {
       '-g', '240',
       '-keyint_min', '240',
       '-sc_threshold', '0',
-      '-b:v', '500k',
+      '-b:v', '50k',
       '-maxrate', '600k',
       '-bufsize', '800k',
       '-c:a', 'aac',
@@ -160,11 +196,11 @@ app.get('/publickey/:streamId', (req, res) => {
     const streamId = req.params.streamId;
     const streamData = streamKeys.get(streamId);
     if (streamData && streamData.expiresAt > Date.now()) {
-      const publicKeyPem = streamData.publicKey;
-      const publicKeyBase64 = publicKeyPem
-        .replace(/-----BEGIN PUBLIC KEY-----/, '')
-        .replace(/-----END PUBLIC KEY-----/, '')
-        .replace(/\n/g, '');
+      const publicKeyDer = crypto.createPublicKey(streamData.publicKey).export({
+        type: 'spki',
+        format: 'der'
+      });
+      const publicKeyBase64 = publicKeyDer.toString('base64');
       res.send(publicKeyBase64);
     } else {
       res.status(404).send('Stream not found or expired');
